@@ -1,0 +1,232 @@
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+
+load("C:/Users/Natalia/Desktop/Studia II stopnia/Semestr 4/Wizualizacje/R/przejazdy.RData")
+
+przejazdy <- przejazdy %>%
+  mutate(
+    Data = as.Date(Data),
+    Miesiac = month(Data, label = TRUE, abbr = FALSE),
+    Rok = year(Data),
+    DzienTygodnia = weekdays(Data),
+    TypDnia = ifelse(DzienTygodnia %in% c("sobota", "niedziela"), "Weekend", "Dzieñ powszedni")
+  )
+
+mediana_licznik <- przejazdy %>%
+  group_by(Stacja) %>%
+  summarize(MedianaLicznik = median(Licznik, na.rm = TRUE))
+
+przejazdy <- przejazdy %>%
+  left_join(mediana_licznik, by = "Stacja")
+
+przejazdy$Stacja <- reorder(przejazdy$Stacja, przejazdy$MedianaLicznik)
+
+ui <- fluidPage(
+  titlePanel("Ruch rowerowy w Gdañsku"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      conditionalPanel(
+        condition = "input.tabs == 'Rozk³ad liczby przejazdów w wybranym punkcie'",
+        selectInput("station", "Wybierz punkt pomiarowy:", 
+                    choices = unique(przejazdy$Stacja))
+      ),
+      conditionalPanel(
+        condition = "input.tabs == 'Porównanie dwóch punktów pod wzglêdem natê¿enia/rozk³adu przejazdów'",
+        selectInput("station1", "Wybierz pierwszy punkt pomiarowy:", 
+                    choices = unique(przejazdy$Stacja)),
+        selectInput("station2", "Wybierz drugi punkt pomiarowy:", 
+                    choices = unique(przejazdy$Stacja))
+      ),
+      conditionalPanel(
+        condition = "input.tabs == 'Natê¿enie przejazdów w wybranym punkcie w zale¿noœci od daty'",
+        selectInput("station", "Wybierz punkt pomiarowy:", 
+                    choices = unique(przejazdy$Stacja)),
+        selectInput("data", "Wybierz zale¿noœæ:", 
+                    choices = c("Miesi¹ce", "Dzieñ tygodnia", "Typ dnia"))
+      ),
+      conditionalPanel(
+        condition = "input.tabs == 'Porównanie natê¿enia przejazdów w wybranych dwóch punktach w zale¿noœci od daty'",
+        selectInput("station1", "Wybierz pierwszy punkt pomiarowy:", 
+                    choices = unique(przejazdy$Stacja)),
+        selectInput("station2", "Wybierz drugi punkt pomiarowy:", 
+                    choices = unique(przejazdy$Stacja)),
+        selectInput("data", "Wybierz zale¿noœæ:", 
+                    choices = c("Miesi¹ce", "Dzieñ tygodnia", "Typ dnia"))
+      ),
+      conditionalPanel(
+        condition = "input.tabs == 'Zale¿noœæ przejazdów i pogody dla wybranej stacji'",
+        selectInput("station", "Wybierz punkt pomiarowy:", 
+                    choices = unique(przejazdy$Stacja)),
+        selectInput("weather_var", "Wybierz zmienn¹ pogodow¹:",
+                    choices = c("Zachmurzenie", "Wiatr", "Temperatura", "Ciœnienie_woda", "Wilgotnoœæ", "Ciœnienie_stacja", "Ciœnienie_morze", "Opady_dzieñ", "Opady_noc"))
+      ),
+      conditionalPanel(
+        condition = "input.tabs == 'Porównanie zale¿noœci przejazdów i pogody dla dwóch dowolnych stacji'",
+        selectInput("station1", "Wybierz pierwszy punkt pomiarowy:", 
+                    choices = unique(przejazdy$Stacja)),
+        selectInput("station2", "Wybierz drugi punkt pomiarowy:", 
+                    choices = unique(przejazdy$Stacja)),
+        selectInput("weather_var", "Wybierz zmienn¹ pogodow¹:",
+                    choices = c("Zachmurzenie", "Wiatr", "Temperatura", "Ciœnienie_woda", "Wilgotnoœæ", "Ciœnienie_stacja", "Ciœnienie_morze", "Opady_dzieñ", "Opady_noc"))
+      )
+    ),
+    
+    mainPanel(
+      tabsetPanel(
+        id = "tabs",
+        tabPanel("Rozk³ad liczby dni pomiarowych w poszczególnych punktach", plotOutput("plot1")),
+        tabPanel("Rozk³ad liczby przejazdów w wybranym punkcie", plotOutput("plot2")),
+        tabPanel("Porównanie wszystkich punktów pod wzglêdem natê¿enia/rozk³adu przejazdów", plotOutput("plot3a")),
+        tabPanel("Porównanie dwóch punktów pod wzglêdem natê¿enia/rozk³adu przejazdów", plotOutput("plot3b")),
+        tabPanel("Natê¿enie przejazdów w wybranym punkcie w zale¿noœci od daty", plotOutput("plot4")),
+        tabPanel("Porównanie natê¿enia przejazdów w wybranych dwóch punktach w zale¿noœci od daty", plotOutput("plot5")),
+        tabPanel("Zale¿noœæ przejazdów i pogody dla wybranej stacji", plotOutput("plot6")),
+        tabPanel("Porównanie zale¿noœci przejazdów i pogody dla dwóch dowolnych stacji", plotOutput("plot7a"), plotOutput("plot7b"))
+      )
+    )
+  )
+)
+
+# Server
+server <- function(input, output) {
+  
+  output$plot1 <- renderPlot({
+    days_per_station <- przejazdy %>%
+      group_by(Stacja) %>%
+      summarise(DniPomiarowe = n())
+    
+    ggplot(days_per_station, aes(x = reorder(Stacja, -DniPomiarowe), y = DniPomiarowe, fill = DniPomiarowe)) +
+      geom_bar(stat = "identity") +
+      scale_fill_gradient(low = "lightblue", high = "darkblue") +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+      labs(title = "Rozk³ad liczby dni pomiarowych w poszczególnych punktach",
+           x = "Punkt pomiarowy",
+           y = "Liczba dni pomiarowych")
+  })
+  
+  output$plot2 <- renderPlot({
+    station_data <- przejazdy %>%
+      filter(Stacja == input$station)
+    
+    ggplot(station_data, aes(x = Licznik)) +
+      geom_histogram(bins = 30, fill = "lightblue", color = "black") +
+      labs(title = paste("Rozk³ad liczby przejazdów dla", input$station),
+           x = "Liczba przejazdów",
+           y = "Czêstotliwoœæ")
+  })
+  
+  output$plot3a <- renderPlot({
+    
+    ggplot(przejazdy, aes(x = Stacja, y = Licznik, fill = Stacja)) +
+      geom_boxplot() +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+      labs(title = "Porównanie wszystkich punktów pod wzglêdem natê¿enia przejazdów",
+           x = "Punkt pomiarowy",
+           y = "Liczba przejazdów") +
+      scale_fill_manual(values = scales::hue_pal()(length(unique(przejazdy$Stacja)))) +
+      theme(legend.position = "none")
+  })
+  
+  output$plot3b <- renderPlot({
+    station1_data <- przejazdy %>%
+      filter(Stacja == input$station1)
+    
+    station2_data <- przejazdy %>%
+      filter(Stacja == input$station2)
+    
+    combined_data <- bind_rows(station2_data, station1_data)
+    
+    ggplot(combined_data, aes(x = Stacja, y = Licznik, fill = Stacja)) +
+      geom_boxplot() +
+      labs(title = paste("Porównanie stacji",input$station1, "i",input$station2 ,"pod wzglêdem natê¿enia przejazdów"),
+           x = "Punkt pomiarowy",
+           y = "Liczba przejazdów") +
+      scale_fill_manual(values = scales::hue_pal()(length(unique(combined_data$Stacja)))) +
+      theme(legend.position = "none")
+  })
+  
+  output$plot4 <- renderPlot({
+    station_data <- przejazdy %>%
+      filter(Stacja == input$station)
+    
+    info <- switch(input$data,
+                   "Miesi¹ce" = station_data$Miesiac,
+                   "Dzieñ tygodnia" = station_data$DzienTygodnia,
+                   "Typ dnia" = station_data$TypDnia)
+  
+    
+    ggplot(station_data, aes(x = info, y = Licznik, fill = info)) +
+      geom_boxplot() +
+      labs(title = paste("Natê¿enie przejazdów dla", input$station, "w zale¿noœci od", input$data),
+           x = input$data,
+           y = "Liczba przejazdów") +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      scale_fill_manual(values = scales::hue_pal()(length(unique(info))))
+  })
+  
+  output$plot5 <- renderPlot({
+    station1_data <- przejazdy %>%
+      filter(Stacja == input$station1)
+    
+    station2_data <- przejazdy %>%
+      filter(Stacja == input$station2)
+    
+    combined_data <- bind_rows(station1_data, station2_data)
+    
+    info <- switch(input$data,
+                   "Miesi¹ce" = combined_data$Miesiac,
+                   "Dzieñ tygodnia" = combined_data$DzienTygodnia,
+                   "Typ dnia" = combined_data$TypDnia)
+    
+    ggplot(combined_data, aes(x = info, y = Licznik, fill = Stacja)) +
+      geom_boxplot() +
+      labs(title = paste("Porównanie stacji",input$station1, "i",input$station2,"w zale¿noœci od", input$data),
+           x = input$data,
+           y = "Liczba przejazdów") +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      scale_fill_manual(values = scales::hue_pal()(length(unique(combined_data$Stacja))))
+  })
+  
+  
+  output$plot6 <- renderPlot({
+    station_data <- przejazdy %>%
+      filter(Stacja == input$station)
+    
+    ggplot(station_data, aes_string(x = input$weather_var, y = "Licznik")) +
+      geom_point() +
+      geom_smooth(method = "lm", se = FALSE, color = "blue") +
+      labs(title = paste("Zale¿noœæ przejazdów od", input$weather_var, "dla", input$station),
+           x = input$weather_var,
+           y = "Liczba przejazdów")
+  })
+  
+  output$plot7a <- renderPlot({
+    station1_data <- przejazdy %>%
+      filter(Stacja == input$station1)
+    
+    ggplot(station1_data, aes_string(x = input$weather_var, y = "Licznik")) +
+      geom_point() +
+      geom_smooth(method = "lm", se = FALSE, color = "blue") +
+      labs(title = paste("Zale¿noœæ przejazdów od", input$weather_var, "dla", input$station1),
+           x = input$weather_var,
+           y = "Liczba przejazdów")
+  })
+  
+  output$plot7b <- renderPlot({
+    station2_data <- przejazdy %>%
+      filter(Stacja == input$station2)
+    
+    ggplot(station2_data, aes_string(x = input$weather_var, y = "Licznik")) +
+      geom_point() +
+      geom_smooth(method = "lm", se = FALSE, color = "blue") +
+      labs(title = paste("Zale¿noœæ przejazdów od", input$weather_var, "dla", input$station2),
+           x = input$weather_var,
+           y = "Liczba przejazdów")
+  })
+}
+
+
+shinyApp(ui = ui, server = server)
