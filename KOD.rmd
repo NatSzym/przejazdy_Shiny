@@ -1,0 +1,232 @@
+---
+title: "Zaawansowane metody wizualizacji i raportowania danych"
+author: "Szymańska Natalia, B. K."
+date: "21 05 2024"
+output: html_document
+---
+## Wstęp
+
+Projekt został stworzy jako apilkacja Shiny - plik został również załączony. Poniżej znajdują się wybrane wykresy, które można wygenerować w aplikacji. Każda sekcja w pliku RMarkdown, to odzielna zakładka w aplikacji Shiny. 
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+
+load("C:/Users/Natalia/Desktop/Studia II stopnia/Semestr 4/Wizualizacje/R/przejazdy.RData")
+
+przejazdy <- przejazdy %>%
+  mutate(
+    Data = as.Date(Data),
+    Miesiac = month(Data, label = TRUE, abbr = FALSE),
+    Rok = year(Data),
+    DzienTygodnia = weekdays(Data),
+    TypDnia = ifelse(DzienTygodnia %in% c("sobota", "niedziela"), "Weekend", "Dzień powszedni")
+  )
+
+mediana_licznik <- przejazdy %>%
+  group_by(Stacja) %>%
+  summarize(MedianaLicznik = median(Licznik, na.rm = TRUE))
+
+przejazdy <- przejazdy %>%
+  left_join(mediana_licznik, by = "Stacja")
+
+przejazdy$Stacja <- reorder(przejazdy$Stacja, przejazdy$MedianaLicznik)
+```
+
+
+## Rozkład liczby dni pomiarowych w poszczególnych punktach
+
+W tej części dostępny jest tylko jeden wykres, który prezentuje rozkład liczby dni pomiarowych w poszczególnych punktach.
+
+```{r}
+days_per_station <- przejazdy %>%
+      group_by(Stacja) %>%
+      summarise(DniPomiarowe = n())
+    
+ggplot(days_per_station, aes(x = reorder(Stacja, -DniPomiarowe), y = DniPomiarowe, fill = DniPomiarowe)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Rozkład liczby dni pomiarowych w poszczególnych punktach",
+       x = "Punkt pomiarowy",
+       y = "Liczba dni pomiarowych")
+```
+
+
+## Rozkład liczby przejazdów w wybranym punkcie
+
+W tej części jest możliwość sprawdzenia jak wygląda wykres rozkładu liczby przejazdów w dowolnie wybranym punkcie. Użytkownik aplikacji po lewej stronie w okienku wyboru, może dowolnie wybrać stację. Tutaj przedstawiono tylko jeden wybrany wykres - dla stacji al. Jana Pawła II.
+
+```{r}
+Jan_Pawel <- przejazdy %>% 
+  filter(Stacja == "al. Jana Pawła II")
+
+ggplot(Jan_Pawel, aes(x = Licznik)) +
+  geom_histogram(bins = 30, fill = "lightblue", color = "black") +
+  labs(title = "Rozkład liczby przejazdów dla punktu pomiarowego al. Jana Pawła II",
+       x = "Liczba przejazdów",
+       y = "Częstość")
+```
+
+
+## Porównanie wszystkich punktów pod względem natężenia/rozkładu przejazdów
+
+W tej części aplikacji widnieje jeden wykres - bez możliwości zmian. Przedsawione zostały wszystkie punkty pomiarowe i rozkład ich liczby przejazdów.
+
+```{r}
+ggplot(przejazdy, aes(x = Stacja, y = Licznik, fill = Stacja)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Porównanie punktów pod względem natężenia przejazdów",
+       x = "Punkt pomiarowy",
+       y = "Liczba przejazdów") +
+  scale_fill_manual(values = scales::hue_pal()(length(unique(przejazdy$Stacja)))) +
+  theme(legend.position = "none")
+```
+
+
+## Porównanie dwóch punktów pod względem natężenia/rozkładu przejazdów
+
+W porównaniu do poprzedniej zakładki użytkownik ma możliwość wyboru dwóch stacji, które chce porównać pod względem natężenia/rozkładu przejazdów. W celu zademonstrowania jak wygląda taki wykres postanowiono wybrać dwie stacje: al. Jana Pawła II i al. Hallera.
+
+```{r}
+Hallera <- przejazdy %>%
+  filter(Stacja == "al. Hallera")
+    
+combined_data <- bind_rows(Hallera, Jan_Pawel)
+    
+ggplot(combined_data, aes(x = Stacja, y = Licznik, fill = Stacja)) +
+  geom_boxplot() +
+  labs(title = "Porównanie stacji al. Jana Pawła II i al. Hallera pod względem natężenia przejazdów",
+       x = "Punkt pomiarowy",
+       y = "Liczba przejazdów") +
+  scale_fill_manual(values = scales::hue_pal()(length(unique(combined_data$Stacja)))) +
+  theme(legend.position = "none")
+```
+
+## Natężenie przejazdów w wybranym punkcie w zależności od daty
+
+W tej części użytkownik może sprawdzić natężenie przejazdów w wybranym przez siebie punkcie pomiarowym w zależności od miesięcy/dni tygodnia czy typu dnia (dzień powszedni i weekend). Użytkownik może sam wybrać, którą zależność chce sprawdzić. Dla przykładu poniżej została przedsatwiona stacja al. Jana Pawła II:
+
+*w zależności od miesiący*
+
+```{r}
+ggplot(Jan_Pawel, aes(x = Miesiac, y = Licznik, fill = Miesiac)) +
+  geom_boxplot() +
+  labs(title = "Natężenie przejazdów dla al. Jana Pawła II w zależności od miesiąca",
+       x = "Miesiąc",
+       y = "Liczba przejazdów") +
+  scale_fill_manual(values = scales::hue_pal()(length(unique(Jan_Pawel$Miesiac)))) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "none")
+```
+
+*w zależności od dnia tygodnia*
+
+```{r}
+ggplot(Jan_Pawel, aes(x = DzienTygodnia, y = Licznik, fill = DzienTygodnia)) +
+  geom_boxplot() +
+  labs(title = "Natężenie przejazdów dla al. Jana Pawła II w zależności od dnia tygodnia",
+       x = "Dzień tygodnia",
+       y = "Liczba przejazdów") +
+  scale_fill_manual(values = scales::hue_pal()(length(unique(Jan_Pawel$DzienTygodnia)))) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "none")
+```
+
+*W zależności od typu dnia (dni powszednich/weekendowych)*
+
+```{r}
+ggplot(Jan_Pawel, aes(x = TypDnia, y = Licznik, fill = TypDnia)) +
+  geom_boxplot() +
+  labs(title = "Natężenie przejazdów dla al. Jana Pawła II w zależności od typu dnia",
+       x = "Typ dnia",
+       y = "Liczba przejazdów") +
+  scale_fill_manual(values = scales::hue_pal()(length(unique(Jan_Pawel$TypDnia)))) +
+  theme(legend.position = "none")
+```
+
+## Porównanie natężenia przejazdów w wybranych dwóch punktach w zależności od daty
+
+Sekcja bardzo podobna do poprzedniej. Tym razem użytkownik wybiera dwa punkty pomiarowe i może dzięki temu porównać wyniki. Dla przykładu wybrano stacje al. Jana Pawła II i al. Hallera.
+
+*w zależności od miesięcy*
+
+```{r}
+ggplot(combined_data, aes(x = Miesiac, y = Licznik, fill = Stacja)) +
+      geom_boxplot() +
+      labs(title = "Porównanie stacji al. Jana Pawła II i al. Hallera w zależności od miesiąca",
+           x = "Miesiąc",
+           y = "Liczba przejazdów") +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      scale_fill_manual(values = scales::hue_pal()(length(unique(combined_data$Stacja))))
+```
+
+*w zależności od dnia tygodnia*
+
+```{r}
+ggplot(combined_data, aes(x = DzienTygodnia, y = Licznik, fill = Stacja)) +
+      geom_boxplot() +
+      labs(title = "Porównanie stacji al. Jana Pawła II i al. Hallera w zależności od dnia tygodnia",
+           x = "Dzień tygodnia",
+           y = "Liczba przejazdów") +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      scale_fill_manual(values = scales::hue_pal()(length(unique(combined_data$Stacja))))
+```
+
+*W zależności od typu dnia (dni powszednich/weekendowych)*
+
+```{r}
+ggplot(combined_data, aes(x = TypDnia, y = Licznik, fill = Stacja)) +
+      geom_boxplot() +
+      labs(title = "Porównanie stacji al. Jana Pawła II i al. Hallera w zależności od typu dnia",
+           x = "Typ dnia",
+           y = "Liczba przejazdów") +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      scale_fill_manual(values = scales::hue_pal()(length(unique(combined_data$Stacja))))
+```
+
+## Zależność przejazdów i pogody dla wybranej stacji
+
+W tej część aplikacji Shiny użyykownik może sam wybrać dowolną stację, która go interesuje oraz wybraną zmienną pogodową. W celu pokazania typu wykresu wybrano al. Jana Pawła II oraz zmienną temperaturę.
+
+```{r}
+ggplot(Jan_Pawel, aes(x = Temperatura, y = Licznik)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(title = "Zależność między liczbą przejazdów a temperaturą dla stacji na al. Jana Pawła II",
+       x = "Temperatura [°C]",
+       y = "Liczba przejazdów")
+```
+
+## Porównanie zależności przejazdów i pogody dla dwóch dowolnych stacji
+
+W tej części użytkownik może od razu wygenerwować dwa wykresy - dla dwóch dowolnych stacji oraz dla wybranej zmiennej pogodowej. Dwa wykresy umieszczone pod sobą umożliwiają prównanie wyników dla stacji. Poniżej, aby przedstawić efekt wybrano stację al. Jana Pawła II i al. Hallera oraz zmienną pogodową temperaturę.
+
+```{r}
+ggplot(Jan_Pawel, aes(x = Temperatura, y = Licznik)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(title = "Zależność między liczbą przejazdów a temperaturą dla stacji na al. Jana Pawła II",
+       x = "Temperatura [°C]",
+       y = "Liczba przejazdów")
+
+ggplot(Hallera, aes(x = Temperatura, y = Licznik)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(title = "Zależność między liczbą przejazdów a temperaturą dla stacji na al. Hallera",
+       x = "Temperatura [°C]",
+       y = "Liczba przejazdów")
+```
+
+
+
+
+
+
+
+
+
+
+
